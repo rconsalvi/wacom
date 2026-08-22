@@ -1,0 +1,39 @@
+<!-- Se aperto da Esplora file, passa alla copia servita dal bridge locale. -->
+<script>
+  if (location.protocol === 'file:') {
+    location.replace('http://127.0.0.1:8765/esempio-integrazione.html');
+  }
+</script>
+<script src="./wacom-stu-client.js"></script>
+
+<button type="button" id="acquisisci-firma">Acquisisci firma</button>
+<span id="stato-wacom"></span>
+<canvas id="anteprima-firma" width="800" height="480"></canvas>
+
+<script>
+  const pulsanteFirma = document.querySelector('#acquisisci-firma');
+  const statoWacom = document.querySelector('#stato-wacom');
+  const anteprimaFirma = document.querySelector('#anteprima-firma');
+
+  pulsanteFirma.addEventListener('click', async () => {
+    pulsanteFirma.disabled = true;
+    statoWacom.textContent = 'Apporre la firma sulla tavoletta…';
+    try {
+      const firma = await WacomStu.capture();
+      WacomStu.draw(anteprimaFirma, firma);
+
+      // Valore da inviare al backend dell'applicazione tramite il normale
+      // salvataggio della pratica/referto/documento.
+      const puntiFirmaTxt = WacomStu.toText(firma);
+      console.log(puntiFirmaTxt);
+
+      statoWacom.textContent = `Firma acquisita (${firma.points.length} punti)`;
+    } catch (errore) {
+      statoWacom.textContent = errore.cancelled
+        ? 'Acquisizione annullata'
+        : 'Errore Wacom: ' + errore.message;
+    } finally {
+      pulsanteFirma.disabled = false;
+    }
+  });
+</script>

@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="wgssSTU">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/wacom-stu541-java-bridge/lib/wgssSTU.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

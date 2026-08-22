@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Firma Wacom STU-541</title>
+  <style>
+    body{font:16px system-ui,sans-serif;max-width:760px;margin:48px auto;padding:0 20px;color:#172033}
+    button{padding:12px 18px;border:0;border-radius:8px;background:#3155d9;color:white;font-weight:650;cursor:pointer}
+    button:disabled{opacity:.5;cursor:wait}.secondary{background:#526079}
+    #status{padding:14px 16px;background:#eef2ff;border-radius:8px;margin:18px 0}
+    canvas{width:100%;height:auto;border:1px solid #ccd3e0;border-radius:8px;background:white}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+  </style>
+</head>
+<body>
+  <h1>Firma grafometrica</h1>
+  <p>Apponi la firma sulla Wacom STU-541, quindi premi <b>OK</b> sulla tavoletta.</p>
+  <div id="status">Verifica del bridge locale…</div>
+  <div class="actions">
+    <button id="capture" disabled>Avvia acquisizione firma</button>
+    <button id="download" class="secondary" disabled>Scarica punti TXT</button>
+  </div>
+  <canvas id="preview" width="800" height="480"></canvas>
+  <script>
+    const API = location.port === '8765' ? '' : 'http://127.0.0.1:8765';
+    const statusEl = document.querySelector('#status');
+    const captureBtn = document.querySelector('#capture');
+    const downloadBtn = document.querySelector('#download');
+    const canvas = document.querySelector('#preview');
+    let signature = null;
+
+    async function check() {
+      try {
+        const response = await fetch(API + '/api/health');
+        const data = await response.json();
+        if (!data.ok || data.tlsDevices < 1) throw new Error('Nessuna STU-541 TLS rilevata');
+        statusEl.textContent = 'Bridge Java attivo. STU-541 pronta.';
+        captureBtn.disabled = false;
+      } catch (error) {
+        statusEl.textContent = 'Bridge non disponibile: ' + error.message;
+      }
+    }
+
+    captureBtn.onclick = async () => {
+      captureBtn.disabled = true;
+      downloadBtn.disabled = true;
+      statusEl.textContent = 'Firma sulla tavoletta e premi OK…';
+      try {
+        const response = await fetch(API + '/api/capture', {method:'POST'});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Acquisizione non riuscita');
+        signature = data;
+        draw(data);
+        statusEl.textContent = `Firma acquisita: ${data.points.length} punti.`;
+        downloadBtn.disabled = false;
+      } catch (error) {
+        statusEl.textContent = error.message;
+      } finally {
+        captureBtn.disabled = false;
+      }
+    };
+
+    downloadBtn.onclick = () => {
+      if (!signature) return;
+      const header = 'index\tx\ty\tpressure\tpenDown\ttimeCount\tsequence';
+      const rows = signature.points.map(p => [p.index,p.x,p.y,p.pressure,p.penDown,p.timeCount ?? '',p.sequence ?? ''].join('\t'));
+      const metadata = [`# capturedAt=${signature.capturedAt}`, `# tabletMaxX=${signature.tabletMaxX}`, `# tabletMaxY=${signature.tabletMaxY}`];
+      const blob = new Blob([[...metadata,header,...rows].join('\r\n')], {type:'text/plain;charset=utf-8'});
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'firma-' + new Date().toISOString().replace(/[:.]/g,'-') + '.txt';
+      link.click();
+      URL.revokeObjectURL(link.href);
+    };
+
+    function draw(data) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.strokeStyle = '#13224b'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      let previous = null;
+      for (const p of data.points) {
+        const x = p.x * canvas.width / data.tabletMaxX;
+        const y = p.y * canvas.height / data.tabletMaxY;
+        if (p.penDown && previous?.penDown) { ctx.beginPath(); ctx.moveTo(previous.x,previous.y); ctx.lineTo(x,y); ctx.stroke(); }
+        previous = {x,y,penDown:p.penDown};
+      }
+    }
+    check();
+  </script>
+</body>
+</html>
