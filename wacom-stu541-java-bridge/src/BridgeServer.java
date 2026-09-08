@@ -1,6 +1,7 @@
 import com.WacomGSS.STU.IOErrorException;
 import com.WacomGSS.STU.NotConnectedException;
 import com.WacomGSS.STU.TlsDevice;
+import com.WacomGSS.STU.UsbDevice;
 import com.WacomGSS.STU.Protocol.Capability;
 import com.WacomGSS.STU.Protocol.PenData;
 import com.WacomGSS.STU.Protocol.PenDataTimeCountSequence;
@@ -40,15 +41,22 @@ public final class BridgeServer {
     server.createContext("/", exchange -> staticFile(exchange, webRoot));
     server.setExecutor(Executors.newCachedThreadPool());
     server.start();
-    System.out.println("Wacom STU-541 Bridge attivo su http://127.0.0.1:" + PORT);
-    System.out.println("Origini web consentite: " + ALLOWED_ORIGINS);
+    System.out.println("Wacom Bridge attivo su http://127.0.0.1:" + PORT);
+    System.out.println();
+    System.out.println("Origini web consentite");
+    ALLOWED_ORIGINS.stream().sorted().forEach(origin -> System.out.println("  " + origin));
   }
 
   private static void health(HttpExchange exchange) throws IOException {
     if (!prepare(exchange, "GET")) return;
     try {
       TlsDevice[] devices = TlsDevice.getTlsDevices();
-      sendJson(exchange, 200, "{\"ok\":true,\"tlsDevices\":" + devices.length + ",\"busy\":false}");
+      UsbDevice[] usbDevices = UsbDevice.getUsbDevices();
+      sendJson(exchange, 200,
+          "{\"ok\":true,\"tlsDevices\":" + devices.length
+              + ",\"usbDevices\":" + usbDevices.length
+              + ",\"devices\":" + (devices.length + usbDevices.length)
+              + ",\"busy\":false}");
     } catch (Throwable error) {
       sendError(exchange, 500, error);
     }
@@ -58,13 +66,13 @@ public final class BridgeServer {
     if (!prepare(exchange, "POST")) return;
     synchronized (CAPTURE_LOCK) {
       try {
-        TlsDevice[] devices = TlsDevice.getTlsDevices();
-        if (devices.length == 0) {
-          sendJson(exchange, 404, "{\"ok\":false,\"error\":\"Nessuna tavoletta TLS rilevata\"}");
+        DeviceRef device = findDevice();
+        if (device == null) {
+          sendJson(exchange, 404, "{\"ok\":false,\"error\":\"Nessuna tavoletta Wacom STU rilevata\"}");
           return;
         }
 
-        CaptureResult result = acquireWithRetry(devices[0]);
+        CaptureResult result = acquireWithRetry(device);
         if (result.cancelled) {
           sendJson(exchange, 409, "{\"ok\":false,\"cancelled\":true,\"error\":\"Acquisizione annullata\"}");
           return;
@@ -77,8 +85,8 @@ public final class BridgeServer {
     }
   }
 
-  private static CaptureResult acquireWithRetry(TlsDevice firstDevice) throws Exception {
-    TlsDevice device = firstDevice;
+  private static CaptureResult acquireWithRetry(DeviceRef firstDevice) throws Exception {
+    DeviceRef device = firstDevice;
     Exception lastError = null;
 
     for (int attempt = 1; attempt <= MAX_CAPTURE_ATTEMPTS; attempt++) {
@@ -93,29 +101,29 @@ public final class BridgeServer {
         System.err.println(
             "Errore TLS/USB temporaneo durante l'acquisizione (tentativo "
                 + attempt + "/" + MAX_CAPTURE_ATTEMPTS + "). "
-                + "Attendo il riavvio della STU-541...");
+                + "Attendo il riavvio della tavoletta Wacom STU...");
 
         sleepWithoutLosingInterrupt(1_500L * attempt);
-        device = waitForTlsDevice(DEVICE_RECONNECT_TIMEOUT_MS);
+        device = waitForDevice(DEVICE_RECONNECT_TIMEOUT_MS);
         if (device == null) {
           throw new Exception(
-              "La STU-541 non e' tornata disponibile dopo il riavvio",
+              "La tavoletta Wacom STU non e' tornata disponibile dopo il riavvio",
               lastError);
         }
-        System.err.println("STU-541 nuovamente rilevata: riprovo automaticamente.");
+        System.err.println("Tavoletta Wacom STU nuovamente rilevata: riprovo automaticamente.");
       }
     }
     throw lastError;
   }
 
-  private static TlsDevice waitForTlsDevice(long timeoutMs) throws Exception {
+  private static DeviceRef waitForDevice(long timeoutMs) throws Exception {
     long deadline = System.currentTimeMillis() + timeoutMs;
     Throwable lastEnumerationError = null;
 
     while (System.currentTimeMillis() < deadline) {
       try {
-        TlsDevice[] devices = TlsDevice.getTlsDevices();
-        if (devices != null && devices.length > 0) return devices[0];
+        DeviceRef device = findDevice();
+        if (device != null) return device;
       } catch (Throwable error) {
         lastEnumerationError = error;
       }
@@ -123,7 +131,7 @@ public final class BridgeServer {
     }
 
     if (lastEnumerationError != null) {
-      System.err.println("Errore durante la nuova rilevazione della STU-541: " + lastEnumerationError);
+      System.err.println("Errore durante la nuova rilevazione della tavoletta Wacom STU: " + lastEnumerationError);
     }
     return null;
   }
@@ -146,14 +154,22 @@ public final class BridgeServer {
     }
   }
 
-  private static CaptureResult acquire(TlsDevice device) throws Exception {
+  private static DeviceRef findDevice() throws Exception {
+    TlsDevice[] tlsDevices = TlsDevice.getTlsDevices();
+    if (tlsDevices != null && tlsDevices.length > 0) return DeviceRef.tls(tlsDevices[0]);
+    UsbDevice[] usbDevices = UsbDevice.getUsbDevices();
+    if (usbDevices != null && usbDevices.length > 0) return DeviceRef.usb(usbDevices[0]);
+    return null;
+  }
+
+  private static CaptureResult acquire(DeviceRef device) throws Exception {
     final CaptureResult[] result = new CaptureResult[1];
     final Throwable[] failure = new Throwable[1];
     SwingUtilities.invokeAndWait(() -> {
       DemoButtons.SignatureDialog dialog = null;
       try {
-        dialog = new DemoButtons.SignatureDialog(null, null, device, false, KEY_PAIR);
-        dialog.setTitle("Firma grafometrica Wacom STU-541");
+        dialog = new DemoButtons.SignatureDialog(null, device.usb, device.tls, false, KEY_PAIR);
+        dialog.setTitle("Firma grafometrica Wacom STU");
         dialog.setVisible(true);
         PenData[] points = dialog.getPenData();
         if (points == null) {
@@ -295,5 +311,18 @@ public final class BridgeServer {
       }
       return json.append("]}").toString();
     }
+  }
+
+  private static final class DeviceRef {
+    final UsbDevice usb;
+    final TlsDevice tls;
+
+    private DeviceRef(UsbDevice usb, TlsDevice tls) {
+      this.usb = usb;
+      this.tls = tls;
+    }
+
+    static DeviceRef usb(UsbDevice device) { return new DeviceRef(device, null); }
+    static DeviceRef tls(TlsDevice device) { return new DeviceRef(null, device); }
   }
 }

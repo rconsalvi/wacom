@@ -1,4 +1,4 @@
-/** Client browser per il bridge locale Wacom STU-541. */
+/** Client browser per il bridge locale Wacom STU. */
 window.WacomStu = (() => {
   const bridgeUrl = 'http://127.0.0.1:8765';
 
@@ -23,7 +23,7 @@ window.WacomStu = (() => {
 
   async function health() {
     const result = await request('/api/health');
-    return {...result, ready: result.tlsDevices > 0};
+    return {...result, ready: result.devices > 0};
   }
 
   function capture() {

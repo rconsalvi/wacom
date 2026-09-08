@@ -1,0 +1,20 @@
+# IDE e configurazioni locali
+.idea/
+*.iml
+
+# Output di compilazione
+out/
+**/out/
+*.class
+
+# Installer, archivi e utility locali
+*.exe
+*.msi
+*.zip
+Wacom utilities/
+
+# File temporanei e log
+*.log
+*.tmp
+Thumbs.db
+.DS_Store

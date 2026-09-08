@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Firma Wacom STU-541</title>
+  <title>Firma Wacom STU</title>
   <style>
     body{font:16px system-ui,sans-serif;max-width:760px;margin:48px auto;padding:0 20px;color:#172033}
     button{padding:12px 18px;border:0;border-radius:8px;background:#3155d9;color:white;font-weight:650;cursor:pointer}
@@ -15,7 +15,7 @@
 </head>
 <body>
   <h1>Firma grafometrica</h1>
-  <p>Apponi la firma sulla Wacom STU-541, quindi premi <b>OK</b> sulla tavoletta.</p>
+  <p>Apponi la firma sulla tavoletta Wacom STU, quindi premi <b>OK</b> sulla tavoletta.</p>
   <div id="status">Verifica del bridge locale…</div>
   <div class="actions">
     <button id="capture" disabled>Avvia acquisizione firma</button>
@@ -34,8 +34,8 @@
       try {
         const response = await fetch(API + '/api/health');
         const data = await response.json();
-        if (!data.ok || data.tlsDevices < 1) throw new Error('Nessuna STU-541 TLS rilevata');
-        statusEl.textContent = 'Bridge Java attivo. STU-541 pronta.';
+        if (!data.ok || data.devices < 1) throw new Error('Nessuna tavoletta Wacom STU rilevata');
+        statusEl.textContent = 'Bridge Java attivo. Tavoletta Wacom STU pronta.';
         captureBtn.disabled = false;
       } catch (error) {
         statusEl.textContent = 'Bridge non disponibile: ' + error.message;
